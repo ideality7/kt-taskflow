@@ -307,6 +307,20 @@ document.querySelectorAll('.column').forEach(col => {
 document.getElementById('searchInput').addEventListener('input', render);
 document.getElementById('filterPriority').addEventListener('change', render);
 
+// ── Sample Data ───────────────────────────────────────
+const SAMPLE_TASKS = [
+  { id: 's1', title: '요구사항 분석 문서 작성', desc: '고객 미팅 내용을 바탕으로 기능 요구사항 정리', priority: 'high', due: '2026-05-20', status: 'todo', createdAt: '2026-05-15T09:00:00.000Z' },
+  { id: 's2', title: 'UI 디자인 시안 검토', desc: 'Figma 시안 피드백 후 수정 요청사항 전달', priority: 'medium', due: '2026-05-22', status: 'todo', createdAt: '2026-05-15T10:00:00.000Z' },
+  { id: 's3', title: 'API 명세서 작성', desc: 'REST API 엔드포인트 정의 및 Swagger 문서화', priority: 'high', due: '2026-05-19', status: 'inprogress', createdAt: '2026-05-14T09:00:00.000Z' },
+  { id: 's4', title: '로그인 기능 개발', desc: 'JWT 기반 인증 구현 (소셜 로그인 포함)', priority: 'high', due: '2026-05-25', status: 'inprogress', createdAt: '2026-05-13T09:00:00.000Z' },
+  { id: 's5', title: '데이터베이스 설계', desc: 'ERD 작성 및 테이블 스키마 정의 완료', priority: 'medium', due: '2026-05-14', status: 'done', createdAt: '2026-05-10T09:00:00.000Z' },
+  { id: 's6', title: '개발 환경 세팅', desc: 'Docker 컨테이너 구성, CI/CD 파이프라인 초기 설정', priority: 'low', due: '2026-05-12', status: 'done', createdAt: '2026-05-09T09:00:00.000Z' },
+];
+
 // ── Init ──────────────────────────────────────────────
 load();
+if (tasks.length === 0) {
+  tasks = SAMPLE_TASKS;
+  save();
+}
 render();
