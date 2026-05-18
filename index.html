@@ -9,7 +9,19 @@
 <body>
   <header>
     <h1>TaskFlow</h1>
-    <button id="openModalBtn" class="btn-add">+ 업무 추가</button>
+    <div class="header-right">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="업무 검색..." />
+      </div>
+      <select id="filterPriority" class="filter-select">
+        <option value="all">전체 우선순위</option>
+        <option value="high">높음</option>
+        <option value="medium">보통</option>
+        <option value="low">낮음</option>
+      </select>
+      <button id="openModalBtn" class="btn-add">+ 업무 추가</button>
+    </div>
   </header>
 
   <main class="board">
@@ -38,11 +50,11 @@
     </section>
   </main>
 
-  <!-- 업무 추가 모달 -->
+  <!-- 업무 추가 / 수정 모달 -->
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal">
       <div class="modal-header">
-        <h2>새 업무 추가</h2>
+        <h2 id="modalTitle">새 업무 추가</h2>
         <button class="modal-close" id="closeModalBtn">&times;</button>
       </div>
       <div class="modal-body">

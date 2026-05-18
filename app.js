@@ -9,8 +9,9 @@ const STATUS_OPTIONS = [
 
 let tasks = [];
 let pendingDeleteId = null;
+let editingId = null;
 
-// ── Storage ──────────────────────────────────────────
+// ── Storage ───────────────────────────────────────────
 function load() {
   try { tasks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
   catch { tasks = []; }
@@ -20,8 +21,24 @@ function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 }
 
-// ── Render ───────────────────────────────────────────
+// ── Filter state ──────────────────────────────────────
+function getFilter() {
+  return {
+    query:    document.getElementById('searchInput').value.trim().toLowerCase(),
+    priority: document.getElementById('filterPriority').value,
+  };
+}
+
+function matchesFilter(task, { query, priority }) {
+  if (priority !== 'all' && task.priority !== priority) return false;
+  if (query && !task.title.toLowerCase().includes(query) &&
+               !task.desc.toLowerCase().includes(query)) return false;
+  return true;
+}
+
+// ── Render ────────────────────────────────────────────
 function render() {
+  const filter = getFilter();
   const lists = {
     todo:       document.getElementById('list-todo'),
     inprogress: document.getElementById('list-inprogress'),
@@ -29,20 +46,21 @@ function render() {
   };
 
   Object.values(lists).forEach(el => (el.innerHTML = ''));
-
   const counts = { todo: 0, inprogress: 0, done: 0 };
 
   tasks.forEach(task => {
     counts[task.status]++;
-    lists[task.status].appendChild(createCard(task));
+    if (matchesFilter(task, filter)) {
+      lists[task.status].appendChild(createCard(task));
+    }
   });
 
   document.getElementById('count-todo').textContent       = counts.todo;
   document.getElementById('count-inprogress').textContent = counts.inprogress;
   document.getElementById('count-done').textContent       = counts.done;
 
-  Object.entries(lists).forEach(([status, el]) => {
-    if (counts[status] === 0) {
+  Object.entries(lists).forEach(([, el]) => {
+    if (!el.hasChildNodes()) {
       el.innerHTML = '<p class="empty-state">업무가 없습니다</p>';
     }
   });
@@ -52,6 +70,7 @@ function createCard(task) {
   const card = document.createElement('div');
   card.className = 'task-card';
   card.dataset.id = task.id;
+  card.draggable = true;
 
   const dueHTML = task.due
     ? `<span class="due-date ${isOverdue(task) ? 'overdue' : ''}">📅 ${formatDate(task.due)}</span>`
@@ -65,6 +84,7 @@ function createCard(task) {
     <div class="task-card-top">
       <span class="task-title">${escHtml(task.title)}</span>
       <div class="task-actions">
+        <button class="btn-icon edit"   data-id="${task.id}" title="수정">✏️</button>
         <button class="btn-icon delete" data-id="${task.id}" title="삭제">🗑</button>
       </div>
     </div>
@@ -76,13 +96,27 @@ function createCard(task) {
     <select class="task-status-select" data-id="${task.id}">${selectOptions}</select>
   `;
 
-  card.querySelector('.btn-icon.delete').addEventListener('click', () => openDeleteModal(task.id));
-  card.querySelector('.task-status-select').addEventListener('change', e => changeStatus(task.id, e.target.value));
+  card.querySelector('.btn-icon.edit').addEventListener('click', e => {
+    e.stopPropagation();
+    openModal(task.id);
+  });
+  card.querySelector('.btn-icon.delete').addEventListener('click', e => {
+    e.stopPropagation();
+    openDeleteModal(task.id);
+  });
+  card.querySelector('.task-status-select').addEventListener('change', e => {
+    e.stopPropagation();
+    changeStatus(task.id, e.target.value);
+  });
+
+  // Drag events
+  card.addEventListener('dragstart', onDragStart);
+  card.addEventListener('dragend',   onDragEnd);
 
   return card;
 }
 
-// ── Task CRUD ────────────────────────────────────────
+// ── Task CRUD ─────────────────────────────────────────
 function addTask(title, desc, priority, due) {
   tasks.push({
     id: Date.now().toString(),
@@ -95,12 +129,26 @@ function addTask(title, desc, priority, due) {
   });
   save();
   render();
+  showToast('업무가 추가됐습니다');
+}
+
+function updateTask(id, title, desc, priority, due) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  task.title    = title;
+  task.desc     = desc;
+  task.priority = priority;
+  task.due      = due;
+  save();
+  render();
+  showToast('업무가 수정됐습니다');
 }
 
 function deleteTask(id) {
   tasks = tasks.filter(t => t.id !== id);
   save();
   render();
+  showToast('업무가 삭제됐습니다');
 }
 
 function changeStatus(id, status) {
@@ -108,10 +156,11 @@ function changeStatus(id, status) {
   if (task) { task.status = status; save(); render(); }
 }
 
-// ── Helpers ──────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────
 function escHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function formatDate(dateStr) {
@@ -120,47 +169,84 @@ function formatDate(dateStr) {
 }
 
 function isOverdue(task) {
-  return task.due && task.status !== 'done' && new Date(task.due) < new Date(new Date().toDateString());
+  return task.due && task.status !== 'done' &&
+    new Date(task.due) < new Date(new Date().toDateString());
 }
 
-// ── Modal: Add ───────────────────────────────────────
-const modalOverlay  = document.getElementById('modalOverlay');
-const taskTitle     = document.getElementById('taskTitle');
-const taskDesc      = document.getElementById('taskDesc');
-const taskPriority  = document.getElementById('taskPriority');
-const taskDue       = document.getElementById('taskDue');
+// ── Toast ─────────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+}
 
-function openModal() {
-  taskTitle.value    = '';
-  taskDesc.value     = '';
-  taskPriority.value = 'medium';
-  taskDue.value      = '';
-  taskTitle.classList.remove('error');
+// ── Modal: Add / Edit ─────────────────────────────────
+const modalOverlay = document.getElementById('modalOverlay');
+const modalTitleEl = document.getElementById('modalTitle');
+const submitBtn    = document.getElementById('submitBtn');
+const taskTitleEl  = document.getElementById('taskTitle');
+const taskDescEl   = document.getElementById('taskDesc');
+const taskPriorityEl = document.getElementById('taskPriority');
+const taskDueEl    = document.getElementById('taskDue');
+
+function openModal(id = null) {
+  editingId = id;
+  taskTitleEl.classList.remove('error');
+
+  if (id) {
+    const task = tasks.find(t => t.id === id);
+    modalTitleEl.textContent = '업무 수정';
+    submitBtn.textContent    = '저장';
+    taskTitleEl.value    = task.title;
+    taskDescEl.value     = task.desc;
+    taskPriorityEl.value = task.priority;
+    taskDueEl.value      = task.due || '';
+  } else {
+    modalTitleEl.textContent = '새 업무 추가';
+    submitBtn.textContent    = '추가';
+    taskTitleEl.value    = '';
+    taskDescEl.value     = '';
+    taskPriorityEl.value = 'medium';
+    taskDueEl.value      = '';
+  }
+
   modalOverlay.classList.add('active');
-  taskTitle.focus();
+  setTimeout(() => taskTitleEl.focus(), 50);
 }
 
-function closeModal() { modalOverlay.classList.remove('active'); }
+function closeModal() {
+  modalOverlay.classList.remove('active');
+  editingId = null;
+}
 
-document.getElementById('openModalBtn').addEventListener('click', openModal);
+document.getElementById('openModalBtn').addEventListener('click', () => openModal());
 document.getElementById('closeModalBtn').addEventListener('click', closeModal);
 document.getElementById('cancelBtn').addEventListener('click', closeModal);
-
 modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
 
-document.getElementById('submitBtn').addEventListener('click', () => {
-  const title = taskTitle.value.trim();
-  if (!title) { taskTitle.classList.add('error'); taskTitle.focus(); return; }
-  addTask(title, taskDesc.value.trim(), taskPriority.value, taskDue.value);
+submitBtn.addEventListener('click', () => {
+  const title = taskTitleEl.value.trim();
+  if (!title) { taskTitleEl.classList.add('error'); taskTitleEl.focus(); return; }
+
+  if (editingId) {
+    updateTask(editingId, title, taskDescEl.value.trim(), taskPriorityEl.value, taskDueEl.value);
+  } else {
+    addTask(title, taskDescEl.value.trim(), taskPriorityEl.value, taskDueEl.value);
+  }
   closeModal();
 });
 
-taskTitle.addEventListener('input', () => taskTitle.classList.remove('error'));
-
-// Enter로 빠른 추가
-taskTitle.addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('submitBtn').click();
-});
+taskTitleEl.addEventListener('input', () => taskTitleEl.classList.remove('error'));
+taskTitleEl.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
 
 // ── Modal: Delete ─────────────────────────────────────
 const deleteOverlay = document.getElementById('deleteOverlay');
@@ -180,8 +266,46 @@ document.getElementById('deleteConfirmBtn').addEventListener('click', () => {
   if (pendingDeleteId) deleteTask(pendingDeleteId);
   closeDeleteModal();
 });
-
 deleteOverlay.addEventListener('click', e => { if (e.target === deleteOverlay) closeDeleteModal(); });
+
+// ── Drag & Drop ───────────────────────────────────────
+let dragId = null;
+
+function onDragStart(e) {
+  dragId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
+}
+
+document.querySelectorAll('.column').forEach(col => {
+  col.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    col.classList.add('drag-over');
+  });
+
+  col.addEventListener('dragleave', e => {
+    if (!col.contains(e.relatedTarget)) col.classList.remove('drag-over');
+  });
+
+  col.addEventListener('drop', e => {
+    e.preventDefault();
+    col.classList.remove('drag-over');
+    if (!dragId) return;
+    const newStatus = col.dataset.status;
+    changeStatus(dragId, newStatus);
+    dragId = null;
+  });
+});
+
+// ── Search & Filter ───────────────────────────────────
+document.getElementById('searchInput').addEventListener('input', render);
+document.getElementById('filterPriority').addEventListener('change', render);
 
 // ── Init ──────────────────────────────────────────────
 load();
